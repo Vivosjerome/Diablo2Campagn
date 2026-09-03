@@ -1,0 +1,13 @@
+# Compiled executable
+*.exe
+*.obj
+*.o
+
+# Cache maps (generated, large, personal)
+cache/
+
+# TCC compiler (binary tools, not source)
+tools/tcc/
+
+# Temporary raw mapgen output
+_raw_*.txt
