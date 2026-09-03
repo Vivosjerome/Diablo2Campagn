@@ -3,11 +3,13 @@
 *.obj
 *.o
 
+# Vendored TinyCC (needed by build.bat)
+!tools/
+!tools/tcc/
+!tools/tcc/**/*.exe
+
 # Cache maps (generated, large, personal)
 cache/
-
-# TCC compiler (binary tools, not source)
-tools/tcc/
 
 # Temporary raw mapgen output
 _raw_*.txt
