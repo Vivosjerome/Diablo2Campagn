@@ -244,8 +244,8 @@ static void line_pts(uint32_t *dst, int w, int h, int x0, int y0, int x1, int y1
 
 #define COL_BOSS_VIOLET px(156, 39, 245) /* #9C27F5 */
 #define COL_ELITE_WHITE px(255, 255, 255)
-#define COL_NORMAL_GRAY px(110, 110, 120)
-#define COL_MINION_GRAY px(165, 165, 175)
+#define COL_NORMAL_RED  px(220, 32, 32)
+#define COL_MINION_RED  px(180, 40, 40)
 
 static int poi_on_screen(int sx, int sy, int w, int h, int margin) {
     return sx >= -margin && sy >= -margin && sx <= w + margin && sy <= h + margin;
@@ -334,12 +334,12 @@ static void draw_monster_marker(uint32_t *dst, int w, int h, int sx, int sy, Mon
         fill = COL_ELITE_WHITE;
         break;
     case MON_MINION:
-        rad = 2;
-        fill = COL_MINION_GRAY;
+        rad = 1;
+        fill = COL_MINION_RED;
         break;
     default:
-        rad = 2;
-        fill = COL_NORMAL_GRAY;
+        rad = 1;
+        fill = COL_NORMAL_RED;
         break;
     }
 

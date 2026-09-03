@@ -3,15 +3,15 @@ setlocal
 set ROOT=%~dp0
 set TCC=%ROOT%tools\tcc\tcc.exe
 set SRC=%ROOT%src
-set OUT=%ROOT%d2maphost.exe
-set MAN=%ROOT%d2maphost.manifest
+set OUT=%ROOT%CampagneD2.exe
+set MAN=%ROOT%CampagneD2.exe.manifest
 
 if not exist "%TCC%" (
   echo [!] tcc.exe manquant dans tools\tcc
   exit /b 1
 )
 
-echo [*] Compiling d2maphost...
+echo [*] Compiling CampagneD2...
 "%TCC%" -I"%SRC%" -luser32 -lgdi32 -lkernel32 -ladvapi32 ^
   -Wl,-subsystem=windows ^
   "%SRC%\main.c" "%SRC%\memory.c" "%SRC%\seed.c" "%SRC%\game.c" "%SRC%\mapgen.c" "%SRC%\mapdata.c" ^

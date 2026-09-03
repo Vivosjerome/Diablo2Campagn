@@ -314,6 +314,12 @@ int main(void) {
                                                          remote_guides, MAX_REMOTE_GUIDES);
         }
 
+        if (game_ui_blocks_overlay(&d2)) {
+            overlay_set_visible(&overlay, false);
+            Sleep((DWORD)settings.read_interval_ms);
+            continue;
+        }
+
         overlay_set_visible(&overlay, true);
 
         {

@@ -186,6 +186,40 @@ bool game_in_game(const D2Process *p) {
     return d2_u8(p, p->module_base + (uintptr_t)OFF_UI_STATES) != 0;
 }
 
+bool game_ui_blocks_overlay(const D2Process *p) {
+    /* MenuData D2R (byte 0 = in-game). On ignore map, chat, items au sol, merc, ceinture. */
+    static const uint8_t block[] = {
+        0x01, /* inventaire */
+        0x02, /* personnage */
+        0x03, /* selection sort */
+        0x04, /* arbre de sorts */
+        0x08, /* dialogue PNJ */
+        0x09, /* menu Echap */
+        0x0B, /* boutique */
+        0x0D, /* enclume */
+        0x0E, /* quetes */
+        0x13, /* waypoints */
+        0x15, /* groupe */
+        0x18, /* coffre */
+        0x19, /* cube */
+        0x1B, /* aide */
+        0x1E  /* inventaire mercenaire */
+    };
+    uint8_t ui[0x1F];
+    int i;
+
+    if (!p || !p->module_base) return false;
+    if (!d2_read(p, p->module_base + (uintptr_t)OFF_UI_STATES, ui, sizeof(ui)))
+        return false;
+
+    for (i = 0; i < (int)(sizeof(block) / sizeof(block[0])); i++) {
+        uint8_t idx = block[i];
+        if (idx < sizeof(ui) && ui[idx])
+            return true;
+    }
+    return false;
+}
+
 bool game_read_state(const D2Process *p, GameState *out, uint64_t sticky_unit) {
     uintptr_t table;
     uint64_t slots[D2_UNIT_TABLE_SLOTS];
