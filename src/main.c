@@ -233,12 +233,14 @@ int main(void) {
     uint32_t last_level = 0;
     uint64_t sticky = 0;
     DWORD last_monster_ms = 0;
+    int hide_reason = 0;
 
     if (!d2_require_admin()) return 1;
 
     settings_init(&settings);
 
     if (!d2_attach(&d2)) return 1;
+    app_log("attach ok");
     if (!overlay_init(&overlay, 500, 500)) {
         app_error("Initialisation overlay impossible.");
         d2_detach(&d2);
@@ -253,12 +255,15 @@ int main(void) {
         if (overlay_want_quit()) break;
 
         if (!d2_is_foreground(d2.pid)) {
+            if (hide_reason != 1) { hide_reason = 1; app_log("hide: D2R pas au premier plan"); }
             overlay_set_visible(&overlay, false);
             Sleep(200);
             continue;
         }
 
-        if (!game_in_game(&d2)) {
+        /* Offset UI souvent faux apres un patch D2R : on se fie a la lecture unit/roster. */
+        if (!game_read_state(&d2, &st, sticky) || !st.valid) {
+            if (hide_reason != 3) { hide_reason = 3; app_log("hide: lecture etat / pos impossible"); }
             sticky = 0;
             overlay_set_visible(&overlay, false);
             if (last_seed != 0) {
@@ -268,13 +273,6 @@ int main(void) {
                 last_seed = 0;
                 last_level = 0;
             }
-            Sleep(200);
-            continue;
-        }
-
-        if (!game_read_state(&d2, &st, sticky) || !st.valid) {
-            sticky = 0;
-            overlay_set_visible(&overlay, false);
             Sleep(200);
             continue;
         }
@@ -289,6 +287,7 @@ int main(void) {
             last_monster_ms = 0;
             if (!mapgen_ensure(st.map_seed, st.difficulty, json_path, sizeof(json_path),
                                settings.allow_mapgen)) {
+                if (hide_reason != 4) { hide_reason = 4; app_log("hide: mapgen / cache carte"); }
                 overlay_set_visible(&overlay, false);
                 Sleep(1000);
                 continue;
@@ -301,6 +300,7 @@ int main(void) {
         if (st.level_id != last_level) {
             map_free(&level);
             if (!map_load_level_from_json_file(json_path, (int)st.level_id, &level)) {
+                if (hide_reason != 5) { hide_reason = 5; app_log("hide: niveau json introuvable"); }
                 overlay_set_visible(&overlay, false);
                 Sleep(300);
                 continue;
@@ -314,12 +314,14 @@ int main(void) {
                                                          remote_guides, MAX_REMOTE_GUIDES);
         }
 
-        if (game_ui_blocks_overlay(&d2)) {
+        if (game_in_game(&d2) && game_ui_blocks_overlay(&d2)) {
+            if (hide_reason != 6) { hide_reason = 6; app_log("hide: menu / inventaire ouvert"); }
             overlay_set_visible(&overlay, false);
             Sleep((DWORD)settings.read_interval_ms);
             continue;
         }
 
+        if (hide_reason != 0) { hide_reason = 0; app_log("overlay visible"); }
         overlay_set_visible(&overlay, true);
 
         {

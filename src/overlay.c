@@ -684,6 +684,15 @@ void overlay_render(Overlay *o, const LevelMap *map, float player_world_x, float
     hdc = GetDC(o->hwnd);
     mem = CreateCompatibleDC(hdc);
     old = SelectObject(mem, o->dib);
+
+    SetBkMode(mem, TRANSPARENT);
+    SelectObject(mem, g_font_poi);
+    {
+        char posbuf[48];
+        snprintf(posbuf, sizeof(posbuf), "X %.0f  Y %.0f", player_world_x, player_world_y);
+        text_outline(mem, 8, 6, posbuf, RGB(230, 230, 220));
+    }
+
     BitBlt(hdc, 0, 0, o->dib_w, o->dib_h, mem, 0, 0, SRCCOPY);
 
     SetBkMode(hdc, TRANSPARENT);

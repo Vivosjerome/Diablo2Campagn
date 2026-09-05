@@ -2,7 +2,7 @@
 #include "offsets.h"
 #include <string.h>
 
-#define OFF_NPC_TABLE   (OFF_UNIT_TABLE + 128ULL * 8ULL)
+#define OFF_NPC_TABLE_DELTA  (128ULL * 8ULL)
 #define OFF_MON_FLAGS   0x1A
 
 #define NPC_MODE_DEATH  0u
@@ -186,7 +186,7 @@ int boss_probe_on_level(const D2Process *p, uint32_t boss_level, uint32_t boss_t
 
     if (!p || !p->module_base || boss_txt == 0) return 0;
 
-    table = p->module_base + (uintptr_t)OFF_NPC_TABLE;
+    table = p->module_base + p->off_unit_table + OFF_NPC_TABLE_DELTA;
     if (!d2_read_unit_table(p, table, slots)) return 0;
 
     for (slot = 0; slot < D2_UNIT_TABLE_SLOTS; slot++) {
@@ -236,7 +236,7 @@ void monsters_read(const D2Process *p, uint32_t level_id, MonList *out) {
     memset(out, 0, sizeof(*out));
     if (!p || !p->module_base) return;
 
-    table = p->module_base + (uintptr_t)OFF_NPC_TABLE;
+    table = p->module_base + p->off_unit_table + OFF_NPC_TABLE_DELTA;
     if (!d2_read_unit_table(p, table, slots)) return;
 
     for (slot = 0; slot < D2_UNIT_TABLE_SLOTS && out->count < MAX_MONSTERS; slot++) {

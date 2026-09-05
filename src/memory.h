@@ -11,6 +11,9 @@ typedef struct {
     HANDLE process;
     DWORD pid;
     uintptr_t module_base;
+    uintptr_t off_unit_table;
+    uintptr_t off_roster;
+    uintptr_t off_ui_states;
 } D2Process;
 
 bool d2_attach(D2Process *out);

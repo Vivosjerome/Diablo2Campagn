@@ -65,7 +65,7 @@ static bool level_id_from_path(const D2Process *p, const uint8_t *path, uint32_t
 }
 
 static bool roster_pos_for_unit(const D2Process *p, uint32_t unit_id, float *ox, float *oy, uint32_t *area) {
-    uint64_t roster = d2_u64(p, p->module_base + (uintptr_t)OFF_ROSTER);
+    uint64_t roster = d2_u64(p, p->module_base + p->off_roster);
     uint8_t node[ROSTER_READ_SIZE];
     int hops = 0;
 
@@ -89,7 +89,7 @@ static bool roster_pos_for_unit(const D2Process *p, uint32_t unit_id, float *ox,
 
 static bool roster_first(const D2Process *p, float *ox, float *oy, uint32_t *area,
                            uint32_t *unit_id, char *name, size_t nlen) {
-    uint64_t roster = d2_u64(p, p->module_base + (uintptr_t)OFF_ROSTER);
+    uint64_t roster = d2_u64(p, p->module_base + p->off_roster);
     uint8_t node[ROSTER_READ_SIZE];
     uint32_t px, py;
 
@@ -183,7 +183,7 @@ static bool try_unit(const D2Process *p, uint64_t unit, GameState *out) {
 
 bool game_in_game(const D2Process *p) {
     if (!p || !p->module_base) return false;
-    return d2_u8(p, p->module_base + (uintptr_t)OFF_UI_STATES) != 0;
+    return d2_u8(p, p->module_base + p->off_ui_states) != 0;
 }
 
 bool game_ui_blocks_overlay(const D2Process *p) {
@@ -209,7 +209,7 @@ bool game_ui_blocks_overlay(const D2Process *p) {
     int i;
 
     if (!p || !p->module_base) return false;
-    if (!d2_read(p, p->module_base + (uintptr_t)OFF_UI_STATES, ui, sizeof(ui)))
+    if (!d2_read(p, p->module_base + p->off_ui_states, ui, sizeof(ui)))
         return false;
 
     for (i = 0; i < (int)(sizeof(block) / sizeof(block[0])); i++) {
@@ -267,7 +267,7 @@ bool game_read_state(const D2Process *p, GameState *out, uint64_t sticky_unit) {
     }
 
 scan_table:
-    table = p->module_base + (uintptr_t)OFF_UNIT_TABLE;
+    table = p->module_base + p->off_unit_table;
     if (!d2_read_unit_table(p, table, slots)) return false;
 
     for (slot = 0; slot < D2_UNIT_TABLE_SLOTS; slot++) {

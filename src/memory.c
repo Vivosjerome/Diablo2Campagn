@@ -1,5 +1,6 @@
 #include "memory.h"
 #include "app.h"
+#include "offsets.h"
 #include <shellapi.h>
 #include <stdio.h>
 #include <string.h>
@@ -346,7 +347,8 @@ bool d2_is_foreground(DWORD pid) {
     fg = GetForegroundWindow();
     if (!fg) return false;
     GetWindowThreadProcessId(fg, &fg_pid);
-    return fg_pid == pid;
+    /* D2R, ou nous (UAC / lancement de l'overlay qui vole le focus). */
+    return fg_pid == pid || fg_pid == GetCurrentProcessId();
 }
 
 static DWORD find_pid(const char *name) {
@@ -369,10 +371,11 @@ static DWORD find_pid(const char *name) {
     return pid;
 }
 
-static uintptr_t module_base(DWORD pid, const char *modname) {
+static uintptr_t module_base(DWORD pid, const char *modname, DWORD *out_size) {
     HANDLE snap;
     MODULEENTRY32 me;
     uintptr_t base = 0;
+    if (out_size) *out_size = 0;
     if (!load_toolhelp()) return 0;
     snap = pCreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
     if (snap == INVALID_HANDLE_VALUE) return 0;
@@ -381,12 +384,91 @@ static uintptr_t module_base(DWORD pid, const char *modname) {
         do {
             if (_stricmp(me.szModule, modname) == 0) {
                 base = (uintptr_t)me.modBaseAddr;
+                if (out_size) *out_size = me.modBaseSize;
                 break;
             }
         } while (pModule32Next(snap, &me));
     }
     CloseHandle(snap);
     return base;
+}
+
+static int find_pat(const uint8_t *buf, size_t n, const uint8_t *pat, const char *mask, int plen) {
+    size_t i, j;
+    for (i = 0; i + (size_t)plen <= n; i++) {
+        for (j = 0; j < (size_t)plen; j++) {
+            if (mask[j] && buf[i + j] != pat[j])
+                break;
+        }
+        if (j == (size_t)plen)
+            return (int)i;
+    }
+    return -1;
+}
+
+/* Signatures MapAssist : unit table / roster / menu (UI). */
+static void scan_d2_offsets(D2Process *p, DWORD mod_size) {
+    const uint8_t pat_unit[] = { 0x48, 0x03, 0xC7, 0x49, 0x8B, 0x8C, 0xC6 };
+    const char mask_unit[] = { 1, 1, 1, 1, 1, 1, 1 };
+    const uint8_t pat_roster[] = { 0x02, 0x45, 0x33, 0xD2, 0x4D, 0x8B };
+    const char mask_roster[] = { 1, 1, 1, 1, 1, 1 };
+    const uint8_t pat_ui[] = { 0x48, 0x89, 0x45, 0xB7, 0x4C, 0x8D, 0x35, 0, 0, 0, 0 };
+    const char mask_ui[] = { 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0 };
+    uint8_t *buf;
+    DWORD off = 0;
+    char line[128];
+
+    p->off_unit_table = (uintptr_t)OFF_UNIT_TABLE;
+    p->off_roster = (uintptr_t)OFF_ROSTER;
+    p->off_ui_states = (uintptr_t)OFF_UI_STATES;
+
+    if (!p->module_base || mod_size < 0x1000 || mod_size > 0x20000000)
+        return;
+    buf = (uint8_t *)VirtualAlloc(NULL, mod_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!buf)
+        return;
+
+    while (off < mod_size) {
+        DWORD chunk = mod_size - off;
+        if (chunk > 0x200000) chunk = 0x200000;
+        if (!d2_read(p, p->module_base + off, buf + off, chunk))
+            break;
+        off += chunk;
+    }
+    if (off < 0x10000) {
+        VirtualFree(buf, 0, MEM_RELEASE);
+        app_log("scan: lecture module incomplete");
+        return;
+    }
+
+    {
+        int at = find_pat(buf, off, pat_unit, mask_unit, 7);
+        if (at >= 0 && (DWORD)at + 11 <= off) {
+            uint32_t rva;
+            memcpy(&rva, buf + at + 7, 4);
+            if (rva > 0x10000 && rva < mod_size)
+                p->off_unit_table = rva;
+        }
+        at = find_pat(buf, off, pat_roster, mask_roster, 6);
+        if (at >= 3 && (DWORD)at + 6 <= off) {
+            int32_t disp;
+            memcpy(&disp, buf + at - 3, 4);
+            p->off_roster = (uintptr_t)((int32_t)at + 1 + disp);
+        }
+        at = find_pat(buf, off, pat_ui, mask_ui, 11);
+        if (at >= 0 && (DWORD)at + 11 <= off) {
+            int32_t disp;
+            memcpy(&disp, buf + at + 7, 4);
+            p->off_ui_states = (uintptr_t)((int32_t)at + 11 + disp);
+        }
+    }
+    VirtualFree(buf, 0, MEM_RELEASE);
+
+    snprintf(line, sizeof(line), "offsets unit=0x%llX roster=0x%llX ui=0x%llX",
+             (unsigned long long)p->off_unit_table,
+             (unsigned long long)p->off_roster,
+             (unsigned long long)p->off_ui_states);
+    app_log(line);
 }
 
 bool d2_attach(D2Process *out) {
@@ -420,16 +502,28 @@ bool d2_attach(D2Process *out) {
             continue;
         }
 
-        out->module_base = module_base(out->pid, "D2R.exe");
-        if (!out->module_base) {
-            CloseHandle(out->process);
-            out->process = NULL;
-            if (attempt == 9) {
-                app_error("Base D2R.exe introuvable.");
-                return false;
+        {
+            DWORD mod_size = 0;
+            uint16_t mz = 0;
+            out->module_base = module_base(out->pid, "D2R.exe", &mod_size);
+            if (!out->module_base) {
+                CloseHandle(out->process);
+                out->process = NULL;
+                if (attempt == 9) {
+                    app_error("Base D2R.exe introuvable.");
+                    return false;
+                }
+                Sleep(500);
+                continue;
             }
-            Sleep(500);
-            continue;
+            if (!d2_read(out, out->module_base, &mz, 2) || mz != 0x5A4D) {
+                HANDLE direct = open_d2_process(out->pid);
+                if (direct) {
+                    CloseHandle(out->process);
+                    out->process = direct;
+                }
+            }
+            scan_d2_offsets(out, mod_size);
         }
 
         (void)donor_pid;
