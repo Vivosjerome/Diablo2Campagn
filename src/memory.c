@@ -272,7 +272,16 @@ static HANDLE scan_handles_for_target(SYSTEM_HANDLE_INFORMATION_EX *info, DWORD 
     return NULL;
 }
 
-/* Pas d'OpenProcess(D2R) : on reprend un handle deja ouvert (Battle.net / parent). */
+static HANDLE open_d2_process(DWORD pid) {
+    HANDLE h;
+
+    enable_debug_privilege();
+    h = OpenProcess(D2_ACCESS, FALSE, pid);
+    if (h) return h;
+    return OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+}
+
+/* Handle Battle.net / parent en priorite (visi). OpenProcess seulement en secours. */
 static HANDLE hijack_process_handle(DWORD target_pid, DWORD *donor_pid) {
     SYSTEM_HANDLE_INFORMATION_EX *info = NULL;
     DWORD self = GetCurrentProcessId();
@@ -400,6 +409,8 @@ bool d2_attach(D2Process *out) {
         }
 
         out->process = hijack_process_handle(out->pid, &donor_pid);
+        if (!out->process)
+            out->process = open_d2_process(out->pid);
         if (!out->process) {
             if (attempt == 9) {
                 app_error("Connexion memoire indisponible.\nLance D2R via Battle.net, puis relance CampagneD2 en Admin.");
