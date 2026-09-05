@@ -1,5 +1,6 @@
 #include "memory.h"
 #include "app.h"
+#include <shellapi.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -312,7 +313,20 @@ bool d2_is_ptr(uint64_t a) {
 }
 
 bool d2_require_admin(void) {
+    SHELLEXECUTEINFOA sei;
+    char path[MAX_PATH];
+
     if (is_running_elevated()) return true;
+
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    memset(&sei, 0, sizeof(sei));
+    sei.cbSize = sizeof(sei);
+    sei.lpVerb = "runas";
+    sei.lpFile = path;
+    sei.nShow = SW_SHOWNORMAL;
+    if (ShellExecuteExA(&sei))
+        return false;
+
     app_error("Lance en Administrateur :\nclic droit sur l'exe -> Executer en tant qu'administrateur");
     return false;
 }

@@ -1,4 +1,5 @@
 #include "mapgen.h"
+#include "app.h"
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,38 @@ static int file_exists(const char *p) {
 static void dirname_of(char *path) {
     char *slash = strrchr(path, '\\');
     if (slash) *slash = 0;
+}
+
+static int is_lod_dir(const char *dir) {
+    char p[MAX_PATH];
+    snprintf(p, sizeof(p), "%s\\bin\\d2-mapgen.exe", dir);
+    if (!file_exists(p)) return 0;
+    snprintf(p, sizeof(p), "%s\\d2data.mpq", dir);
+    if (file_exists(p)) return 1;
+    snprintf(p, sizeof(p), "%s\\d2exp.mpq", dir);
+    return file_exists(p);
+}
+
+static int resolve_lod(const char *exe_dir, char *lod, size_t lod_n, char *mapgen, size_t mapgen_n) {
+    char cand[MAX_PATH];
+    char full[MAX_PATH];
+    const char *rel[] = { "Campagn", "", "..", NULL };
+    int i;
+
+    for (i = 0; rel[i]; i++) {
+        if (rel[i][0])
+            snprintf(cand, sizeof(cand), "%s\\%s", exe_dir, rel[i]);
+        else
+            snprintf(cand, sizeof(cand), "%s", exe_dir);
+        if (!GetFullPathNameA(cand, MAX_PATH, full, NULL))
+            continue;
+        if (!is_lod_dir(full))
+            continue;
+        snprintf(lod, lod_n, "%s", full);
+        snprintf(mapgen, mapgen_n, "%s\\bin\\d2-mapgen.exe", full);
+        return 1;
+    }
+    return 0;
 }
 
 bool mapgen_ensure(uint32_t seed, uint32_t difficulty, char *out_json_path, size_t path_len,
@@ -33,8 +66,14 @@ bool mapgen_ensure(uint32_t seed, uint32_t difficulty, char *out_json_path, size
 
     GetModuleFileNameA(NULL, exe_dir, MAX_PATH);
     dirname_of(exe_dir);
-    /* LoD install = parent directory (d2-mapgen /C). */
-    snprintf(project, sizeof(project), "%s\\..", exe_dir);
+    if (!resolve_lod(exe_dir, project, sizeof(project), mapgen, sizeof(mapgen))) {
+        static int warned_lod;
+        if (!warned_lod) {
+            warned_lod = 1;
+            app_error("d2-mapgen introuvable.\nLe dossier Campagn (Diablo II LoD) doit etre a cote de CampagneD2.exe.");
+        }
+        return false;
+    }
 
     snprintf(cache_dir, sizeof(cache_dir), "%s\\cache", exe_dir);
     CreateDirectoryA(cache_dir, NULL);
@@ -49,7 +88,6 @@ bool mapgen_ensure(uint32_t seed, uint32_t difficulty, char *out_json_path, size
         return false;
     }
 
-    snprintf(mapgen, sizeof(mapgen), "%s\\bin\\d2-mapgen.exe", project);
     if (!file_exists(mapgen)) {
         return false;
     }
@@ -119,7 +157,12 @@ bool mapgen_ensure(uint32_t seed, uint32_t difficulty, char *out_json_path, size
     free(line);
 
     if (first) {
+        static int warned_empty;
         DeleteFileA(cache_file);
+        if (!warned_empty) {
+            warned_empty = 1;
+            app_error("Generation de carte echouee.\nVerifie que Campagn contient une install LoD complete.");
+        }
         return false;
     }
     DeleteFileA(tmp_raw);

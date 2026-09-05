@@ -8,6 +8,11 @@
 !tools/tcc/
 !tools/tcc/**/*.exe
 
+# Map generator only — never the LoD MPQs / DLLs
+!Campagn/bin/d2-mapgen.exe
+Campagn/bin/d2lod/
+Campagn/bin/Save/
+
 # Cache maps (generated, large, personal)
 cache/
 

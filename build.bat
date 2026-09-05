@@ -12,7 +12,7 @@ if not exist "%TCC%" (
 )
 
 echo [*] Compiling CampagneD2...
-"%TCC%" -I"%SRC%" -luser32 -lgdi32 -lkernel32 -ladvapi32 ^
+"%TCC%" -I"%SRC%" -luser32 -lgdi32 -lkernel32 -ladvapi32 -lshell32 ^
   -Wl,-subsystem=windows ^
   "%SRC%\main.c" "%SRC%\memory.c" "%SRC%\seed.c" "%SRC%\game.c" "%SRC%\mapgen.c" "%SRC%\mapdata.c" ^
   "%SRC%\levelnames.c" "%SRC%\elites.c" "%SRC%\bossstate.c" "%SRC%\settings.c" "%SRC%\overlay.c" ^
