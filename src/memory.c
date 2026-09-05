@@ -532,6 +532,14 @@ bool d2_attach(D2Process *out) {
     return false;
 }
 
+bool d2_still_running(const D2Process *p) {
+    DWORD code = 0;
+    if (!p || !p->pid) return false;
+    if (p->process && GetExitCodeProcess(p->process, &code) && code != STILL_ACTIVE)
+        return false;
+    return find_pid("D2R.exe") == p->pid;
+}
+
 void d2_detach(D2Process *p) {
     if (p && p->process) {
         CloseHandle(p->process);

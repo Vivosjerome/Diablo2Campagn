@@ -53,4 +53,7 @@ bool d2_require_admin(void);
 /* True si D2R.exe a le focus clavier (fenetre active). */
 bool d2_is_foreground(DWORD pid);
 
+/* False si D2R s'est ferme. */
+bool d2_still_running(const D2Process *p);
+
 #endif

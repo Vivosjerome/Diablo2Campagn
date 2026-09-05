@@ -217,6 +217,20 @@ static int collect_campaign_guides(const char *json, uint32_t level_id,
     return n;
 }
 
+static HANDLE g_single;
+
+static int already_running(void) {
+    g_single = CreateMutexA(NULL, FALSE, "Local\\CampagneD2_single");
+    if (!g_single)
+        return 0;
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(g_single);
+        g_single = NULL;
+        return 1;
+    }
+    return 0;
+}
+
 int main(void) {
     D2Process d2;
     Overlay overlay;
@@ -236,6 +250,7 @@ int main(void) {
     int hide_reason = 0;
 
     if (!d2_require_admin()) return 1;
+    if (already_running()) return 0;
 
     settings_init(&settings);
 
@@ -253,6 +268,10 @@ int main(void) {
         overlay_pump();
         settings_poll_hotkeys(&settings);
         if (overlay_want_quit()) break;
+        if (!d2_still_running(&d2)) {
+            app_log("D2R ferme, exit");
+            break;
+        }
 
         if (!d2_is_foreground(d2.pid)) {
             if (hide_reason != 1) { hide_reason = 1; app_log("hide: D2R pas au premier plan"); }
@@ -347,5 +366,6 @@ int main(void) {
 
     overlay_shutdown(&overlay);
     d2_detach(&d2);
+    if (g_single) CloseHandle(g_single);
     return 0;
 }
