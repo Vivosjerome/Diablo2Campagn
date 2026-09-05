@@ -2,6 +2,7 @@
 *.exe
 *.obj
 *.o
+!CampagneD2.exe
 
 # Vendored TinyCC (needed by build.bat)
 !tools/

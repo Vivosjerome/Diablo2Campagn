@@ -168,29 +168,28 @@ static int collect_donor_pids(DWORD self, DWORD target, DWORD *out, int max_out)
     int n = 0, i;
     DWORD parent = 0;
 
-    for (i = 0; names[i] && n < max_out; i++) {
-        DWORD p = find_pid(names[i]);
-        if (p && p != self && p != target && !pid_in_list(p, out, n))
-            out[n++] = p;
-    }
-
-    if (!load_toolhelp()) return n;
+    if (!load_toolhelp()) return 0;
     snap = pCreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap != INVALID_HANDLE_VALUE) {
-        pe.dwSize = sizeof(pe);
-        if (pProcess32First(snap, &pe)) {
-            do {
-                if (pe.th32ProcessID == target) {
-                    parent = pe.th32ParentProcessID;
+    if (snap == INVALID_HANDLE_VALUE) return 0;
+    pe.dwSize = sizeof(pe);
+    if (pProcess32First(snap, &pe)) {
+        do {
+            if (pe.th32ProcessID == target)
+                parent = pe.th32ParentProcessID;
+            if (pe.th32ProcessID == self || pe.th32ProcessID == target)
+                continue;
+            for (i = 0; names[i]; i++) {
+                if (_stricmp(pe.szExeFile, names[i]) == 0) {
+                    if (!pid_in_list(pe.th32ProcessID, out, n) && n < max_out)
+                        out[n++] = pe.th32ProcessID;
                     break;
                 }
-            } while (pProcess32Next(snap, &pe));
-        }
-        CloseHandle(snap);
+            }
+        } while (pProcess32Next(snap, &pe));
     }
+    CloseHandle(snap);
     if (parent && parent != self && parent != target && !pid_in_list(parent, out, n) && n < max_out)
         out[n++] = parent;
-
     return n;
 }
 
@@ -275,11 +274,20 @@ static HANDLE scan_handles_for_target(SYSTEM_HANDLE_INFORMATION_EX *info, DWORD 
     return NULL;
 }
 
-/* Duplicate an existing cross-process handle instead of OpenProcess(D2R). */
+static HANDLE open_d2_process(DWORD pid) {
+    HANDLE h;
+
+    enable_debug_privilege();
+    h = OpenProcess(D2_ACCESS, FALSE, pid);
+    if (h) return h;
+    return OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+}
+
+/* Duplicate an existing cross-process handle if OpenProcess is blocked. */
 static HANDLE hijack_process_handle(DWORD target_pid, DWORD *donor_pid) {
     SYSTEM_HANDLE_INFORMATION_EX *info = NULL;
     DWORD self = GetCurrentProcessId();
-    DWORD donors[24];
+    DWORD donors[64];
     int n_donors;
     int elevated = is_running_elevated();
     HANDLE found = NULL;
@@ -289,7 +297,7 @@ static HANDLE hijack_process_handle(DWORD target_pid, DWORD *donor_pid) {
         return NULL;
 
     enable_debug_privilege();
-    n_donors = collect_donor_pids(self, target_pid, donors, 24);
+    n_donors = collect_donor_pids(self, target_pid, donors, 64);
 
     info = query_all_handles();
     if (!info) return NULL;
@@ -383,31 +391,51 @@ static uintptr_t module_base(DWORD pid, const char *modname) {
 
 bool d2_attach(D2Process *out) {
     DWORD donor_pid = 0;
+    int attempt;
 
     memset(out, 0, sizeof(*out));
     load_ntdll();
+    enable_debug_privilege();
 
-    out->pid = find_pid("D2R.exe");
-    if (!out->pid) {
-        app_error("D2R.exe introuvable. Lance le jeu d'abord.");
-        return false;
-    }
+    for (attempt = 0; attempt < 10; attempt++) {
+        out->pid = find_pid("D2R.exe");
+        if (!out->pid) {
+            if (attempt == 9) {
+                app_error("D2R.exe introuvable. Lance le jeu d'abord.");
+                return false;
+            }
+            Sleep(500);
+            continue;
+        }
 
-    out->process = hijack_process_handle(out->pid, &donor_pid);
-    if (!out->process) {
-        app_error("Connexion memoire indisponible.\nLance D2R via Battle.net, puis relance en Admin.");
-        return false;
-    }
+        out->process = open_d2_process(out->pid);
+        if (!out->process)
+            out->process = hijack_process_handle(out->pid, &donor_pid);
+        if (!out->process) {
+            if (attempt == 9) {
+                app_error("Connexion memoire indisponible.\nLance D2R via Battle.net, puis relance CampagneD2 en Admin.");
+                return false;
+            }
+            Sleep(500);
+            continue;
+        }
 
-    out->module_base = module_base(out->pid, "D2R.exe");
-    if (!out->module_base) {
-        app_error("Base D2R.exe introuvable.");
-        CloseHandle(out->process);
-        out->process = NULL;
-        return false;
+        out->module_base = module_base(out->pid, "D2R.exe");
+        if (!out->module_base) {
+            CloseHandle(out->process);
+            out->process = NULL;
+            if (attempt == 9) {
+                app_error("Base D2R.exe introuvable.");
+                return false;
+            }
+            Sleep(500);
+            continue;
+        }
+
+        (void)donor_pid;
+        return true;
     }
-    (void)donor_pid;
-    return true;
+    return false;
 }
 
 void d2_detach(D2Process *p) {
