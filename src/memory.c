@@ -260,8 +260,6 @@ static HANDLE scan_handles_for_target(SYSTEM_HANDLE_INFORMATION_EX *info, DWORD 
             continue;
         if (filter_type && !handle_is_process_type(e->ObjectTypeIndex))
             continue;
-        if (!(e->GrantedAccess & PROCESS_VM_READ))
-            continue;
         if (donors_only && n_donors > 0 && !pid_in_list(owner_pid, donors, n_donors))
             continue;
 
@@ -274,16 +272,7 @@ static HANDLE scan_handles_for_target(SYSTEM_HANDLE_INFORMATION_EX *info, DWORD 
     return NULL;
 }
 
-static HANDLE open_d2_process(DWORD pid) {
-    HANDLE h;
-
-    enable_debug_privilege();
-    h = OpenProcess(D2_ACCESS, FALSE, pid);
-    if (h) return h;
-    return OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-}
-
-/* Duplicate an existing cross-process handle if OpenProcess is blocked. */
+/* Pas d'OpenProcess(D2R) : on reprend un handle deja ouvert (Battle.net / parent). */
 static HANDLE hijack_process_handle(DWORD target_pid, DWORD *donor_pid) {
     SYSTEM_HANDLE_INFORMATION_EX *info = NULL;
     DWORD self = GetCurrentProcessId();
@@ -302,10 +291,12 @@ static HANDLE hijack_process_handle(DWORD target_pid, DWORD *donor_pid) {
     info = query_all_handles();
     if (!info) return NULL;
 
-    /* Toujours: Battle.net / Steam / parent / explorer (sans admin si possible). */
+    /* Battle.net / Agent / parent / explorer — tous leurs process, type Process puis sans filtre. */
     found = scan_handles_for_target(info, target_pid, self, donors, n_donors, 1, 1, donor_pid);
+    if (!found)
+        found = scan_handles_for_target(info, target_pid, self, donors, n_donors, 1, 0, donor_pid);
 
-    /* Scan systeme (svchost, etc.) — necessite souvent Admin + SeDebugPrivilege. */
+    /* Scan systeme (svchost, etc.) — Admin + SeDebugPrivilege. */
     if (!found && elevated) {
         found = scan_handles_for_target(info, target_pid, self, donors, n_donors, 0, 1, donor_pid);
         if (!found)
@@ -408,9 +399,7 @@ bool d2_attach(D2Process *out) {
             continue;
         }
 
-        out->process = open_d2_process(out->pid);
-        if (!out->process)
-            out->process = hijack_process_handle(out->pid, &donor_pid);
+        out->process = hijack_process_handle(out->pid, &donor_pid);
         if (!out->process) {
             if (attempt == 9) {
                 app_error("Connexion memoire indisponible.\nLance D2R via Battle.net, puis relance CampagneD2 en Admin.");
