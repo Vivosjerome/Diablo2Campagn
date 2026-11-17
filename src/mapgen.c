@@ -15,20 +15,54 @@ static void dirname_of(char *path) {
     if (slash) *slash = 0;
 }
 
-static int is_lod_dir(const char *dir) {
+static int has_mpq(const char *dir) {
     char p[MAX_PATH];
-    snprintf(p, sizeof(p), "%s\\bin\\d2-mapgen.exe", dir);
-    if (!file_exists(p)) return 0;
     snprintf(p, sizeof(p), "%s\\d2data.mpq", dir);
     if (file_exists(p)) return 1;
     snprintf(p, sizeof(p), "%s\\d2exp.mpq", dir);
     return file_exists(p);
 }
 
+/* d2-mapgen.exe peut etre dans le dossier du jeu, dans bin\, ou juste au-dessus. */
+static int find_mapgen(const char *game, char *mapgen, size_t mapgen_n) {
+    static const char *rel[] = {
+        "d2-mapgen.exe",
+        "bin\\d2-mapgen.exe",
+        "..\\d2-mapgen.exe",
+        "..\\bin\\d2-mapgen.exe",
+        NULL
+    };
+    char cand[MAX_PATH];
+    int i;
+
+    for (i = 0; rel[i]; i++) {
+        snprintf(cand, sizeof(cand), "%s\\%s", game, rel[i]);
+        if (!file_exists(cand))
+            continue;
+        if (!GetFullPathNameA(cand, (DWORD)mapgen_n, mapgen, NULL))
+            continue;
+        return 1;
+    }
+    return 0;
+}
+
 static int resolve_lod(const char *exe_dir, char *lod, size_t lod_n, char *mapgen, size_t mapgen_n) {
+    /* Le guide met souvent les MPQ dans bin ou bin\\d2lod.
+       L'install classique les met dans Campagn, a cote de bin\\. */
+    static const char *rel[] = {
+        "Campagn\\bin",
+        "Campagn\\bin\\d2lod",
+        "Campagn",
+        "bin\\d2lod",
+        "bin",
+        "",
+        "..\\Campagn\\bin",
+        "..\\Campagn",
+        "..",
+        NULL
+    };
     char cand[MAX_PATH];
     char full[MAX_PATH];
-    const char *rel[] = { "Campagn", "", "..", NULL };
     int i;
 
     for (i = 0; rel[i]; i++) {
@@ -38,10 +72,20 @@ static int resolve_lod(const char *exe_dir, char *lod, size_t lod_n, char *mapge
             snprintf(cand, sizeof(cand), "%s", exe_dir);
         if (!GetFullPathNameA(cand, MAX_PATH, full, NULL))
             continue;
-        if (!is_lod_dir(full))
+        if (!has_mpq(full))
+            continue;
+        if (!find_mapgen(full, mapgen, mapgen_n))
             continue;
         snprintf(lod, lod_n, "%s", full);
-        snprintf(mapgen, mapgen_n, "%s\\bin\\d2-mapgen.exe", full);
+        {
+            static int logged;
+            char msg[MAX_PATH + 32];
+            if (!logged) {
+                logged = 1;
+                snprintf(msg, sizeof(msg), "lod: %s", full);
+                app_log(msg);
+            }
+        }
         return 1;
     }
     return 0;
@@ -70,7 +114,9 @@ bool mapgen_ensure(uint32_t seed, uint32_t difficulty, char *out_json_path, size
         static int warned_lod;
         if (!warned_lod) {
             warned_lod = 1;
-            app_error("d2-mapgen introuvable.\nLe dossier Campagn (Diablo II LoD) doit etre a cote de CampagneD2.exe.");
+            app_error("d2-mapgen introuvable.\n"
+                      "d2data.mpq doit etre dans Campagn\\bin (a cote de d2-mapgen.exe),\n"
+                      "dans Campagn\\bin\\d2lod, ou directement dans Campagn.");
         }
         return false;
     }

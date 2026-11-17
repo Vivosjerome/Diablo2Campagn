@@ -208,7 +208,9 @@ bool game_ui_blocks_overlay(const D2Process *p) {
     uint8_t ui[0x1F];
     int i;
 
-    if (!p || !p->module_base) return false;
+    /* Signature UI absente : l'offset par defaut lit n'importe quoi et
+       cache la carte en permanence (faux "inventaire ouvert"). */
+    if (!p || !p->module_base || !p->ui_found) return false;
     if (!d2_read(p, p->module_base + p->off_ui_states, ui, sizeof(ui)))
         return false;
 

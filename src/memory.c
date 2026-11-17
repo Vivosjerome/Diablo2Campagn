@@ -428,17 +428,36 @@ static void scan_d2_offsets(D2Process *p, DWORD mod_size) {
     if (!buf)
         return;
 
-    while (off < mod_size) {
-        DWORD chunk = mod_size - off;
-        if (chunk > 0x200000) chunk = 0x200000;
-        if (!d2_read(p, p->module_base + off, buf + off, chunk))
-            break;
-        off += chunk;
-    }
-    if (off < 0x10000) {
-        VirtualFree(buf, 0, MEM_RELEASE);
-        app_log("scan: lecture module incomplete");
-        return;
+    /* Un bloc de 2 Mo echoue des qu'une page du module est illisible.
+       On lit par pages et on saute les trous, sinon le scan ne demarre jamais. */
+    {
+        DWORD got = 0;
+        while (off < mod_size) {
+            DWORD chunk = 0x10000;
+            DWORD page;
+            if (off + chunk > mod_size) chunk = mod_size - off;
+            if (d2_read(p, p->module_base + off, buf + off, chunk)) {
+                got += chunk;
+                off += chunk;
+                continue;
+            }
+            for (page = 0; page < chunk; page += 0x1000) {
+                DWORD n = 0x1000;
+                if (page + n > chunk) n = chunk - page;
+                if (d2_read(p, p->module_base + off + page, buf + off + page, n))
+                    got += n;
+                else
+                    memset(buf + off + page, 0, n);
+            }
+            off += chunk;
+        }
+        if (got < 0x10000) {
+            snprintf(line, sizeof(line), "scan: lecture module incomplete (%lu octets)",
+                     (unsigned long)got);
+            VirtualFree(buf, 0, MEM_RELEASE);
+            app_log(line);
+            return;
+        }
     }
 
     {
@@ -460,14 +479,16 @@ static void scan_d2_offsets(D2Process *p, DWORD mod_size) {
             int32_t disp;
             memcpy(&disp, buf + at + 7, 4);
             p->off_ui_states = (uintptr_t)((int32_t)at + 11 + disp);
+            p->ui_found = 1;
         }
     }
     VirtualFree(buf, 0, MEM_RELEASE);
 
-    snprintf(line, sizeof(line), "offsets unit=0x%llX roster=0x%llX ui=0x%llX",
+    snprintf(line, sizeof(line), "offsets unit=0x%llX roster=0x%llX ui=0x%llX trouve=%d",
              (unsigned long long)p->off_unit_table,
              (unsigned long long)p->off_roster,
-             (unsigned long long)p->off_ui_states);
+             (unsigned long long)p->off_ui_states,
+             p->ui_found);
     app_log(line);
 }
 

@@ -14,6 +14,7 @@ typedef struct {
     uintptr_t off_unit_table;
     uintptr_t off_roster;
     uintptr_t off_ui_states;
+    int ui_found;
 } D2Process;
 
 bool d2_attach(D2Process *out);
